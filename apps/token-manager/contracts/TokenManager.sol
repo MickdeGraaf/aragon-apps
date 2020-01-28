@@ -175,6 +175,48 @@ contract TokenManager is ITokenController, IForwarder, AragonApp {
     }
 
     /**
+    * @notice Mint `@tokenAmount(self.token(): address, _amount, false)` tokens to `_receiver` from the Token Manager's holdings with a `_revokable : 'revokable' : ''` vesting starting at `@formatDate(_start)`, cliff at `@formatDate(_cliff)` (first portion of tokens transferable), and completed vesting at `@formatDate(_vested)` (all tokens transferable)
+    * @param _receiver The address receiving the tokens, cannot be Token Manager itself
+    * @param _amount Number of tokens vested
+    * @param _start Date the vesting calculations start
+    * @param _cliff Date when the initial portion of tokens are transferable
+    * @param _vested Date when all tokens are transferable
+    * @param _revokable Whether the vesting can be revoked by the Token Manager
+    * @author PIE DAO
+    */
+    function mintVested(
+        address _receiver,
+        uint256 _amount,
+        uint64 _start,
+        uint64 _cliff,
+        uint64 _vested,
+        bool _revokable
+    )
+        external
+        authP(ASSIGN_ROLE, arr(_receiver, _amount))
+        returns (uint256)
+    {
+        require(_receiver != address(this), ERROR_VESTING_TO_TM);
+        require(vestingsLengths[_receiver] < MAX_VESTINGS_PER_ADDRESS, ERROR_TOO_MANY_VESTINGS);
+        require(_start <= _cliff && _cliff <= _vested, ERROR_WRONG_CLIFF_DATE);
+
+        uint256 vestingId = vestingsLengths[_receiver]++;
+        vestings[_receiver][vestingId] = TokenVesting(
+            _amount,
+            _start,
+            _cliff,
+            _vested,
+            _revokable
+        );
+
+        _mint(_receiver, _amount);
+
+        emit NewVesting(_receiver, vestingId, _amount);
+
+        return vestingId;
+    }
+
+    /**
     * @notice Revoke vesting #`_vestingId` from `_holder`, returning unvested tokens to the Token Manager
     * @param _holder Address whose vesting to revoke
     * @param _vestingId Numeric id of the vesting
