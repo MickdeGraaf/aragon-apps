@@ -101,8 +101,8 @@ contract TokenManager is TokenManagerBase {
         for(uint256 i = 0; i < stakingTiers.length; i++) {
             if(stakingTiers[i].minDuration >= _duration) {
                 stake.tiers.push(stakingTiers[i].tokenManager);
+                stakingTiers[i].tokenManager.mint(msg.sender, _amount);
             }
-            stakingTiers[i].tokenManager.mint(msg.sender, _amount);
         }
 
         return true;
