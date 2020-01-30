@@ -25,6 +25,7 @@ contract TokenManager is ITokenController, IForwarder, AragonApp {
     bytes32 public constant BURN_ROLE = keccak256("BURN_ROLE");
 
     uint256 public constant MAX_VESTINGS_PER_ADDRESS = 50;
+    uint256 public constant MAX_STAKES_PER_ADDRESS = 50;
 
     string private constant ERROR_CALLER_NOT_TOKEN = "TM_CALLER_NOT_TOKEN";
     string private constant ERROR_NO_VESTING = "TM_NO_VESTING";
@@ -38,6 +39,7 @@ contract TokenManager is ITokenController, IForwarder, AragonApp {
     string private constant ERROR_CAN_NOT_FORWARD = "TM_CAN_NOT_FORWARD";
     string private constant ERROR_BALANCE_INCREASE_NOT_ALLOWED = "TM_BALANCE_INC_NOT_ALLOWED";
     string private constant ERROR_ASSIGN_TRANSFER_FROM_REVERTED = "TM_ASSIGN_TRANSFER_FROM_REVERTED";
+    string private constant ERROR_STAKE_TOO_LARGE = "STAKE_TOO_LARGE";
 
     struct TokenVesting {
         uint256 amount;
@@ -47,6 +49,17 @@ contract TokenManager is ITokenController, IForwarder, AragonApp {
         bool revokable;
     }
 
+    struct TokenStake {
+        uint256 amount;
+        uint256 stakedTill;
+        uint256[] tiers;
+    }
+
+    struct StakingTier {
+        uint256 minDuration;
+        address tokenManager;
+    }
+
     // Note that we COMPLETELY trust this MiniMeToken to not be malicious for proper operation of this contract
     MiniMeToken public token;
     uint256 public maxAccountTokens;
@@ -54,6 +67,13 @@ contract TokenManager is ITokenController, IForwarder, AragonApp {
     // We are mimicing an array in the inner mapping, we use a mapping instead to make app upgrade more graceful
     mapping (address => mapping (uint256 => TokenVesting)) internal vestings;
     mapping (address => uint256) public vestingsLengths;
+
+    // We are mimicing an array in the inner mapping, we use a mapping instead to make app upgrade more graceful
+    mapping (address => mapping (uint256 => TokenStake)) internal stakes;
+    mapping (address => uint256) public stakesLength;
+    mapping (address => uint256) public totalStakedOf;
+
+    StakingTier[] public stakingTiers;
 
     // Other token specific events can be watched on the token address directly (avoids duplication)
     event NewVesting(address indexed receiver, uint256 vestingId, uint256 amount);
@@ -248,6 +268,27 @@ contract TokenManager is ITokenController, IForwarder, AragonApp {
         emit RevokeVesting(_holder, _vestingId, nonVested);
     }
 
+    /**
+    * @notice Stake tokens
+    *
+    *
+    *
+    **/
+    function stakeTokens(address _amount, uint256 _duration) external {
+        uint256 totalStaked = totalStakedOf[msg.sender].add(_amount);
+        require(totalStaked <= token.balanceOf(msg.sender), ERROR_STAKE_TOO_LARGE);
+        totalStakedOf[msg.sender] = totalStaked;
+
+        uint256 stakeId = stakesLength[msg.sender] ++;
+
+        stakes[msg.sender][stakeId] = TokensStake({
+            amount: _amount;
+            stakedTill: block.timestamp.add(duration);
+            
+        })
+        
+    }
+
     // ITokenController fns
     // `onTransfer()`, `onApprove()`, and `proxyPayment()` are callbacks from the MiniMe token
     // contract and are only meant to be called through the managed MiniMe token that gets assigned
@@ -430,6 +471,12 @@ contract TokenManager is ITokenController, IForwarder, AragonApp {
         return tokens.sub(vestedTokens);
     }
 
+    function _stakeableBalance(address _holder, uint256 _time) internal view returns (uint256) {
+        uint256 stakeable = token.balanceOf(_holder);
+        stakeable = stakeable.min(totalStaked[_hodler]);
+        return stakeable;
+    }
+
     function _transferableBalance(address _holder, uint256 _time) internal view returns (uint256) {
         uint256 transferable = token.balanceOf(_holder);
 
@@ -452,7 +499,7 @@ contract TokenManager is ITokenController, IForwarder, AragonApp {
                 transferable = transferable.sub(nonTransferable);
             }
         }
-
+        // TODO deduct staked balance from this
         return transferable;
     }
 }
